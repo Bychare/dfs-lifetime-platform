@@ -1,0 +1,21 @@
+/* DFS Analytics Platform — custom styles */
+
+/* Dash auto-loads everything from assets/ */
+
+body {
+    font-family: Inter, system-ui, -apple-system, sans-serif;
+}
+
+.card {
+    border-radius: 8px;
+}
+
+/* Sidebar nav pills */
+.nav-pills .nav-link.active {
+    font-weight: 600;
+}
+
+.nav-pills .nav-link {
+    color: #495057;
+    font-size: 0.9rem;
+}
