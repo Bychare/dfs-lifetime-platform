@@ -3,7 +3,7 @@ Reusable Dash layout components: KPI cards, section headers, etc.
 """
 
 import dash_bootstrap_components as dbc
-from dash import html
+from dash import dcc, html
 
 
 def kpi_card(title: str, value: str, color: str = "primary") -> dbc.Card:
@@ -23,6 +23,28 @@ def section_header(title: str, subtitle: str = "") -> html.Div:
     if subtitle:
         children.append(html.P(subtitle, className="text-muted"))
     return html.Div(children, className="mb-3 mt-4")
+
+
+def glossary_accordion(title: str, markdown_text: str) -> dbc.Accordion:
+    """Collapsed glossary block with Markdown content."""
+    return dbc.Accordion(
+        [dbc.AccordionItem(dcc.Markdown(markdown_text, className="small"), title=title)],
+        start_collapsed=True,
+        className="mb-3",
+    )
+
+
+def methodological_notes(markdown_text: str, border_color: str = "info") -> html.Div:
+    """Styled methodological notes card."""
+    return html.Div(
+        [
+            section_header("Methodological Notes"),
+            dbc.Card(
+                dbc.CardBody(dcc.Markdown(markdown_text, className="small")),
+                className=f"mb-4 border-{border_color}",
+            ),
+        ]
+    )
 
 
 def placeholder_page(title: str, description: str) -> html.Div:

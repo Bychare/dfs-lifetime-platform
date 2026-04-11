@@ -24,6 +24,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 RAW_DIR = _ROOT / "data" / "raw"
 PROCESSED_DIR = _ROOT / "data" / "processed"
 PARQUET_PATH = PROCESSED_DIR / "players_features.parquet"
+PICKLE_PATH = PROCESSED_DIR / "players_features.pkl"
 
 
 # ---------------------------------------------------------------------------
@@ -108,8 +109,14 @@ def build_features(force: bool = False) -> pd.DataFrame:
 
     Caches result to parquet. Pass force=True to rebuild.
     """
-    if PARQUET_PATH.exists() and not force:
-        return pd.read_parquet(PARQUET_PATH)
+    if not force:
+        if PARQUET_PATH.exists():
+            try:
+                return pd.read_parquet(PARQUET_PATH)
+            except (ImportError, ValueError, OSError):
+                pass
+        if PICKLE_PATH.exists():
+            return pd.read_pickle(PICKLE_PATH)
 
     # --- Load raw tables ---
     cohort = load_cohort()
@@ -211,7 +218,10 @@ def build_features(force: bool = False) -> pd.DataFrame:
 
     # --- Save ---
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(PARQUET_PATH, index=False)
+    try:
+        df.to_parquet(PARQUET_PATH, index=False)
+    except (ImportError, ValueError, OSError):
+        df.to_pickle(PICKLE_PATH)
 
     return df
 

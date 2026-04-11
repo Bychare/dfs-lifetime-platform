@@ -9,6 +9,7 @@ build/
 
 # Data
 data/processed/*.parquet
+data/processed/*.pkl
 data/raw/*.csv
 data/codebook/*.pdf
 
@@ -28,6 +29,7 @@ ENV/
 # IDE
 .idea/
 .vscode/
+.codex
 *.swp
 *.swo
 

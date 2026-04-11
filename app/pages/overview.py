@@ -13,11 +13,87 @@ import plotly.express as px
 from components.data_loader import get_players
 from components.plots import (
     fig_histogram, fig_box_by_group, fig_correlation_heatmap,
-    fig_us_state_map, fig_kpi_cards, PALETTE,
+    fig_kpi_cards, PALETTE,
 )
 from components.layout_utils import kpi_card, section_header
 
 dash.register_page(__name__, path="/", name="Overview & EDA", order=0)
+
+METRIC_OPTIONS = [
+    {"label": "Total Fees ($)", "value": "TotFees"},
+    {"label": "Total Winnings ($)", "value": "TotWinnings"},
+    {"label": "Net P&L ($)", "value": "net_pnl"},
+    {"label": "Contests Entered", "value": "nCont"},
+    {"label": "Active Days", "value": "nDays"},
+    {"label": "Avg Buy-In ($)", "value": "AvgBuyIn"},
+    {"label": "Risk Score", "value": "RiskScore"},
+    {"label": "Win Rate", "value": "win_rate"},
+    {"label": "Intensity (contests/day)", "value": "intensity"},
+    {"label": "Type Diversity (entropy)", "value": "type_diversity"},
+]
+
+GROUP_OPTIONS = [
+    {"label": "None", "value": "none"},
+    {"label": "Churned vs Active", "value": "is_churned"},
+    {"label": "Multi-sport", "value": "is_multisport"},
+    {"label": "Dominant Contest Type", "value": "dominant_type"},
+    {"label": "Risk Quartile", "value": "risk_quartile"},
+    {"label": "Age Group", "value": "age_group"},
+]
+
+CORRELATION_COLS = [
+    "TotFees", "TotWinnings", "net_pnl", "nCont", "nDays",
+    "AvgBuyIn", "RiskScore", "win_rate", "intensity", "type_diversity",
+]
+
+GROUP_LABEL_MAPS = {
+    "is_churned": {0: "Active", 1: "Churned"},
+    "is_multisport": {0: "NFL only", 1: "Multi-sport"},
+}
+
+
+def _overview_df():
+    return get_players()
+
+
+def _apply_group_labels(df, group_col):
+    plot_df = df.copy()
+    label_map = GROUP_LABEL_MAPS.get(group_col)
+    if label_map:
+        plot_df[group_col] = plot_df[group_col].map(label_map)
+    return plot_df
+
+
+def _top_states_bar_figure(df):
+    us = df[df["country_name"] == "U.S.A."]
+    counts = us["state_name"].value_counts()
+    top20 = counts.head(20).rename_axis("state").reset_index(name="players")
+    fig = px.bar(
+        top20,
+        x="players",
+        y="state",
+        orientation="h",
+        color_discrete_sequence=[PALETTE[0]],
+        labels={"players": "Players", "state": "State"},
+    )
+    fig.update_layout(
+        title="Top 20 US States by Player Count",
+        template="plotly_white",
+        margin=dict(l=120, r=20, t=50, b=40),
+        yaxis=dict(autorange="reversed"),
+        height=400,
+    )
+    return fig
+
+
+def _contest_type_figure(df):
+    counts = df["dominant_type"].value_counts()
+    fig = px.pie(
+        names=counts.index, values=counts.values,
+        color_discrete_sequence=PALETTE,
+    )
+    fig.update_layout(title="Dominant Contest Type", template="plotly_white")
+    return fig
 
 # ---------------------------------------------------------------------------
 # Layout
@@ -40,18 +116,7 @@ layout = html.Div([
             dbc.Label("Metric", html_for="metric-select"),
             dbc.Select(
                 id="metric-select",
-                options=[
-                    {"label": "Total Fees ($)", "value": "TotFees"},
-                    {"label": "Total Winnings ($)", "value": "TotWinnings"},
-                    {"label": "Net P&L ($)", "value": "net_pnl"},
-                    {"label": "Contests Entered", "value": "nCont"},
-                    {"label": "Active Days", "value": "nDays"},
-                    {"label": "Avg Buy-In ($)", "value": "AvgBuyIn"},
-                    {"label": "Risk Score", "value": "RiskScore"},
-                    {"label": "Win Rate", "value": "win_rate"},
-                    {"label": "Intensity (contests/day)", "value": "intensity"},
-                    {"label": "Type Diversity (entropy)", "value": "type_diversity"},
-                ],
+                options=METRIC_OPTIONS,
                 value="TotFees",
             ),
         ], md=3),
@@ -69,14 +134,7 @@ layout = html.Div([
             dbc.Label("Group by", html_for="group-select"),
             dbc.Select(
                 id="group-select",
-                options=[
-                    {"label": "None", "value": "none"},
-                    {"label": "Churned vs Active", "value": "is_churned"},
-                    {"label": "Multi-sport", "value": "is_multisport"},
-                    {"label": "Dominant Contest Type", "value": "dominant_type"},
-                    {"label": "Risk Quartile", "value": "risk_quartile"},
-                    {"label": "Age Group", "value": "age_group"},
-                ],
+                options=GROUP_OPTIONS,
                 value="none",
             ),
         ], md=3),
@@ -111,7 +169,7 @@ layout = html.Div([
     Input("metric-select", "value"),  # triggers on page load
 )
 def update_kpis(_):
-    df = get_players()
+    df = _overview_df()
     kpis = fig_kpi_cards(df)
     return dbc.Row([
         dbc.Col(kpi_card("Players", f"{kpis['total_players']:,}"), md=True),
@@ -130,7 +188,7 @@ def update_kpis(_):
     Input("log-switch", "value"),
 )
 def update_histogram(metric, log_switch):
-    df = get_players()
+    df = _overview_df()
     return fig_histogram(df[metric].dropna(), metric, log_x="log" in log_switch)
 
 
@@ -141,15 +199,10 @@ def update_histogram(metric, log_switch):
     Input("log-switch", "value"),
 )
 def update_box(metric, group, log_switch):
-    df = get_players()
+    df = _overview_df()
     if group == "none":
         group = "is_churned"
-    # Map 0/1 to readable labels for binary columns
-    plot_df = df.copy()
-    if group == "is_churned":
-        plot_df[group] = plot_df[group].map({0: "Active", 1: "Churned"})
-    elif group == "is_multisport":
-        plot_df[group] = plot_df[group].map({0: "NFL only", 1: "Multi-sport"})
+    plot_df = _apply_group_labels(df, group)
     return fig_box_by_group(plot_df, metric, group, log_y="log" in log_switch)
 
 
@@ -158,12 +211,7 @@ def update_box(metric, group, log_switch):
     Input("metric-select", "value"),  # just for trigger
 )
 def update_corr(_):
-    df = get_players()
-    cols = [
-        "TotFees", "TotWinnings", "net_pnl", "nCont", "nDays",
-        "AvgBuyIn", "RiskScore", "win_rate", "intensity", "type_diversity",
-    ]
-    return fig_correlation_heatmap(df, cols)
+    return fig_correlation_heatmap(_overview_df(), CORRELATION_COLS)
 
 
 @callback(
@@ -171,28 +219,7 @@ def update_corr(_):
     Input("metric-select", "value"),
 )
 def update_map(_):
-    df = get_players()
-    # US states only (country == USA)
-    us = df[df["country_name"] == "U.S.A."]
-    counts = us["state_name"].value_counts()
-    # For now, show as bar chart of top-20 states
-    top20 = counts.head(20).rename_axis("state").reset_index(name="players")
-    fig = px.bar(
-        top20,
-        x="players",
-        y="state",
-        orientation="h",
-        color_discrete_sequence=[PALETTE[0]],
-        labels={"players": "Players", "state": "State"},
-    )
-    fig.update_layout(
-        title="Top 20 US States by Player Count",
-        template="plotly_white",
-        margin=dict(l=120, r=20, t=50, b=40),
-        yaxis=dict(autorange="reversed"),
-        height=400,
-    )
-    return fig
+    return _top_states_bar_figure(_overview_df())
 
 
 @callback(
@@ -200,14 +227,7 @@ def update_map(_):
     Input("metric-select", "value"),
 )
 def update_contest_types(_):
-    df = get_players()
-    counts = df["dominant_type"].value_counts()
-    fig = px.pie(
-        names=counts.index, values=counts.values,
-        color_discrete_sequence=PALETTE,
-    )
-    fig.update_layout(title="Dominant Contest Type", template="plotly_white")
-    return fig
+    return _contest_type_figure(_overview_df())
 
 
 @callback(
@@ -215,12 +235,10 @@ def update_contest_types(_):
     Input("group-select", "value"),
 )
 def update_churn_by_group(group):
-    df = get_players()
+    df = _overview_df()
     if group == "none":
         group = "dominant_type"
-    plot_df = df.copy()
-    if group == "is_multisport":
-        plot_df[group] = plot_df[group].map({0: "NFL only", 1: "Multi-sport"})
+    plot_df = _apply_group_labels(df, group)
 
     churn_rates = (
         plot_df.groupby(group)["is_churned"]
