@@ -11,6 +11,9 @@ from scipy import stats
 try:
     from components.data_loader import get_players
     from components.stats import (
+        adjust_pvalues,
+        bootstrap_uplift_ci,
+        proportion_z_test,
         sample_size_continuous,
         sample_size_proportions,
         sample_size_survival,
@@ -18,6 +21,9 @@ try:
 except ImportError:  # pragma: no cover - fallback for package-style imports in tests
     from app.components.data_loader import get_players
     from app.components.stats import (
+        adjust_pvalues,
+        bootstrap_uplift_ci,
+        proportion_z_test,
         sample_size_continuous,
         sample_size_proportions,
         sample_size_survival,
@@ -27,83 +33,93 @@ PALETTE = px.colors.qualitative.Set2
 
 SIM_METRICS = {
     "retained_30d": {
-        "label": "30-day retention",
-        "description": "Player stayed active for at least 30 days after first contest.",
+        "label": "Удержание 30 дней",
+        "description": "Игрок оставался активным минимум 30 дней после первого контеста.",
     },
     "retained_60d": {
-        "label": "60-day retention",
-        "description": "Stricter retention endpoint for stickier cohorts.",
+        "label": "Удержание 60 дней",
+        "description": "Более строгая retention-конечная точка для устойчивых когорт.",
     },
     "reached_10_contests": {
-        "label": "Reached 10 contests",
-        "description": "Useful milestone KPI when churn is heavily censored.",
+        "label": "Достиг 10 контестов",
+        "description": "Полезный milestone KPI, когда churn сильно цензурирован.",
     },
     "profitable_player": {
-        "label": "Positive net P&L",
-        "description": "Share of players finishing the season with positive net result.",
+        "label": "Положительный net P&L",
+        "description": "Доля игроков, закончивших сезон с положительным финансовым результатом.",
     },
 }
 
 SEGMENTS = {
-    "all": "All players",
-    "multisport": "Multi-sport players",
-    "nfl_only": "NFL-only players",
-    "high_risk": "High-risk quartile",
-    "low_risk": "Low-risk quartile",
-    "high_buyin": "High buy-in quartile",
+    "all": "Все игроки",
+    "multisport": "Мультиспортивные игроки",
+    "nfl_only": "Только NFL",
+    "high_risk": "Высокий риск, Q4",
+    "low_risk": "Низкий риск, Q1",
+    "high_buyin": "Высокий бай-ин, Q4",
 }
 
 AB_GLOSSARY_MD = """
-| Term | Meaning |
+| Термин | Значение |
 |---|---|
-| **A/B test** | Randomized controlled experiment comparing a control variant with a treatment variant. |
-| **Control** | Existing product experience used as the benchmark. |
-| **Treatment** | New experience whose effect we want to estimate. |
-| **Baseline rate** | Expected KPI value in control before launching the test. |
-| **MDE** | Minimum Detectable Effect — the smallest effect size worth powering the experiment for. |
-| **Alpha** | Type I error rate. Probability of a false positive if there is truly no effect. |
-| **Power** | Probability of detecting a real effect of at least the chosen size. Equal to 1 − Type II error. |
-| **Hazard ratio (HR)** | Relative event rate in a survival-style endpoint. HR < 1 means slower churn; HR > 1 means faster churn. |
-| **z-test** | Frequentist test comparing two proportions under a normal approximation. |
-| **95% CI** | Interval of plausible values for the estimated uplift. If it crosses 0, the result is not clearly directional. |
-| **Posterior** | Bayesian distribution of possible treatment effects after combining prior beliefs with observed data. |
-| **P(Treat > Ctrl)** | Posterior probability that the treatment arm truly outperforms control. |
-| **Expected loss** | Expected downside from shipping treatment if it is actually worse than control. |
-| **Sequential testing** | Monitoring the test at interim looks rather than only once at the end. |
-| **O'Brien-Fleming boundary** | Conservative early stopping rule. Very high threshold at early looks, approaching the usual cutoff near the end. |
-| **Information fraction** | Share of the planned sample already observed at a given interim look. |
+| **A/B-тест** | Рандомизированный контролируемый эксперимент, сравнивающий контрольный и тестовый вариант. |
+| **Контроль** | Текущий продуктовый опыт, используемый как база сравнения. |
+| **Тест / treatment** | Новая версия продукта, эффект которой мы хотим оценить. |
+| **Базовая конверсия** | Ожидаемое значение KPI в контрольной группе до запуска эксперимента. |
+| **MDE** | Minimum Detectable Effect — минимальный эффект, под который имеет смысл рассчитывать мощность теста. |
+| **Alpha** | Ошибка первого рода. Вероятность ложноположительного вывода при отсутствии эффекта. |
+| **Power** | Вероятность обнаружить реальный эффект заданного размера. Равна 1 − β. |
+| **Hazard ratio (HR)** | Относительная интенсивность событий в survival-endpoint. HR < 1 означает более медленный churn, HR > 1 — более быстрый. |
+| **z-тест** | Частотный тест сравнения двух долей в нормальном приближении. |
+| **95% CI** | Интервал правдоподобных значений оценённого uplift. Если он пересекает 0, результат не имеет явного направления. |
+| **Posterior** | Байесовское распределение возможных эффектов после объединения prior и наблюдаемых данных. |
+| **P(Treat > Ctrl)** | Апостериорная вероятность того, что тестовая группа лучше контрольной. |
+| **Expected loss** | Ожидаемый ущерб от выката treatment, если на самом деле он хуже контроля. |
+| **Bootstrap CI** | Непараметрический интервал, полученный ресэмплингом наблюдений с возвращением. Полезен как робастная проверка uplift. |
+| **Множественные сравнения** | Ситуация, когда одновременно оценивается несколько KPI или сегментов. Без поправки число ложноположительных выводов растёт. |
+| **Holm correction** | Пошаговая поправка, контролирующая FWER: вероятность хотя бы одного ложного срабатывания в семействе тестов. |
+| **BH correction** | Поправка Benjamini-Hochberg, контролирующая FDR: ожидаемую долю ложных находок среди всех значимых. |
+| **Sequential testing** | Мониторинг эксперимента на промежуточных просмотрах, а не только в финале. |
+| **Граница O'Brien-Fleming** | Консервативное правило ранней остановки: очень высокий порог в начале и более мягкий к концу теста. |
+| **Information fraction** | Доля уже собранной информации относительно полного плана эксперимента. |
 """
 
 AB_NOTES_MD = """
-**Planning assumptions.** The sample-size calculator uses normal approximations:
-two-proportion design for binary KPIs, two-sample design for continuous KPIs,
-and Schoenfeld's event-based approximation for survival endpoints. These are
-appropriate for early planning, but final design choices should still be
-checked against real traffic allocation, variance, and business constraints.
+**Планировочные допущения.** Калькулятор размера выборки использует нормальные
+аппроксимации: дизайн для двух долей для бинарных KPI, двухвыборочный дизайн
+для непрерывных метрик и формулу Шёнфельда для survival-endpoints. Это удобно
+для раннего планирования, но финальный дизайн всё равно нужно сверять с реальным
+трафиком, дисперсией и бизнес-ограничениями.
 
-**What the simulator is and is not.** The simulator is not replaying a true
-historical randomized experiment. Instead, it takes an empirical baseline from
-the DFS cohort and injects a configurable treatment effect. That makes it good
-for intuition-building, stakeholder demos, and interview storytelling, but not
-for validating a real product decision.
+**Что симулятор делает и чего не делает.** Симулятор не воспроизводит реальный
+исторический рандомизированный эксперимент. Он берёт эмпирический baseline из
+DFS-когорты и искусственно добавляет treatment-эффект. Поэтому он хорош для
+объяснения логики, демо и портфолио, но не для валидации реального продуктового
+решения.
 
-**Frequentist and Bayesian outputs answer different questions.** The z-test and
-its confidence interval quantify how surprising the observed difference would be
-under a null hypothesis of no effect. The Bayesian block instead estimates a
-posterior distribution of uplift and reports the probability that treatment
-beats control. Showing both is useful in portfolio work because many product
-teams mix classical experimentation with decision-theoretic framing.
+**Частотный и байесовский блоки отвечают на разные вопросы.** z-тест и его
+доверительный интервал показывают, насколько неожиданна наблюдаемая разница при
+нулевой гипотезе отсутствия эффекта. Байесовский блок, напротив, оценивает
+апостериорное распределение uplift и вероятность того, что treatment лучше
+control. Для портфолио это сильный плюс, потому что продуктовые команды часто
+смешивают классическую экспериментальную статистику и decision-oriented подход.
 
-**Sequential monitoring prevents naive peeking.** If we repeatedly test the
-same experiment with a fixed 0.05 threshold, false positives inflate. The
-O'Brien-Fleming design keeps early stopping possible, but demands much stronger
-evidence at early looks. This mirrors real experimentation platforms where
-product teams want to monitor progress without invalidating inference.
+**Bootstrap и поправки на множественные сравнения добавляют надёжность.**
+Bootstrap CI полезен как робастная проверка на случай, когда нормальное
+приближение выглядит слишком уверенно. Поправки Holm и BH нужны тогда, когда
+мы одновременно смотрим не на один KPI, а на семейство метрик: например,
+retention, milestone и profitability.
 
-**Binary KPI simplification.** The current simulator focuses on binary outcomes
-such as retention, milestone completion, or profitability flags. This keeps the
-demo interpretable and aligned with the project narrative. A natural next step
-would be adding continuous metrics like revenue per player or contest fees.
+**Sequential monitoring защищает от наивного peeking.** Если многократно
+проверять один и тот же эксперимент с фиксированным порогом 0.05, число ложных
+срабатываний растёт. Дизайн O'Brien-Fleming позволяет раннюю остановку, но
+требует гораздо более сильных доказательств на ранних просмотрах. Это хорошо
+соответствует реальным experimentation platforms.
+
+**Упрощение до бинарных KPI.** Сейчас симулятор сфокусирован на бинарных исходах:
+retention, достижение milestone и прибыльность игрока. Это делает модуль более
+читаемым и лучше вписывает его в общую историю проекта. Естественное расширение
+дальше — добавить непрерывные метрики вроде выручки на игрока или contest fees.
 """
 
 
@@ -168,20 +184,26 @@ def simulate_binary_experiment(
     replace = n_per_arm > len(values)
     control = rng.choice(values.to_numpy(dtype=int), size=n_per_arm, replace=replace)
     treatment = rng.choice(values.to_numpy(dtype=int), size=n_per_arm, replace=replace)
-
-    current = float(treatment.mean())
-    if current < target:
-        zero_idx = np.where(treatment == 0)[0]
-        flip_prob = min(1.0, (target - current) / max(1 - current, 1e-9))
-        flips = zero_idx[rng.random(len(zero_idx)) < flip_prob]
-        treatment[flips] = 1
-    elif current > target:
-        one_idx = np.where(treatment == 1)[0]
-        flip_prob = min(1.0, (current - target) / max(current, 1e-9))
-        flips = one_idx[rng.random(len(one_idx)) < flip_prob]
-        treatment[flips] = 0
+    treatment = _shift_binary_rate(treatment, target, rng)
 
     return control, treatment, baseline, target
+
+
+def _shift_binary_rate(values: np.ndarray, target: float, rng: np.random.Generator) -> np.ndarray:
+    """Adjust a sampled binary arm toward a target rate by flipping outcomes."""
+    values = values.astype(int, copy=True)
+    current = float(values.mean())
+    if current < target:
+        zero_idx = np.where(values == 0)[0]
+        flip_prob = min(1.0, (target - current) / max(1 - current, 1e-9))
+        flips = zero_idx[rng.random(len(zero_idx)) < flip_prob]
+        values[flips] = 1
+    elif current > target:
+        one_idx = np.where(values == 1)[0]
+        flip_prob = min(1.0, (current - target) / max(current, 1e-9))
+        flips = one_idx[rng.random(len(one_idx)) < flip_prob]
+        values[flips] = 0
+    return values
 
 
 def _arm_ci(successes: int, total: int, alpha: float = 0.05) -> tuple[float, float]:
@@ -214,8 +236,8 @@ def rate_bar_figure(control: np.ndarray, treatment: np.ndarray, alpha: float) ->
         textposition="outside",
     ))
     fig.update_layout(
-        title="Observed KPI by Arm",
-        yaxis_title="Rate (%)",
+        title="Наблюдаемый KPI по группам",
+        yaxis_title="Доля (%)",
         template="plotly_white",
         margin=dict(l=40, r=20, t=60, b=40),
     )
@@ -228,11 +250,11 @@ def posterior_figure(diff_draws: np.ndarray) -> go.Figure:
         x=diff_draws * 100,
         nbins=50,
         color_discrete_sequence=[PALETTE[2]],
-        labels={"x": "Treatment - Control (pp)"},
+        labels={"x": "Treatment - Control (п.п.)"},
     )
     fig.add_vline(x=0, line_dash="dash", line_color="#495057")
     fig.update_layout(
-        title="Posterior Distribution of Uplift",
+        title="Апостериорное распределение uplift",
         template="plotly_white",
         bargap=0.05,
         margin=dict(l=40, r=20, t=60, b=40),
@@ -247,27 +269,27 @@ def sequential_figure(seq_df: pd.DataFrame) -> go.Figure:
         x=seq_df["look"],
         y=seq_df["z_stat"],
         mode="lines+markers",
-        name="Observed z",
+        name="Наблюдаемая z-статистика",
         line=dict(color=PALETTE[0], width=3),
     ))
     fig.add_trace(go.Scatter(
         x=seq_df["look"],
         y=seq_df["z_boundary"],
         mode="lines+markers",
-        name="Upper OBF bound",
+        name="Верхняя граница OBF",
         line=dict(color=PALETTE[1], dash="dot"),
     ))
     fig.add_trace(go.Scatter(
         x=seq_df["look"],
         y=-seq_df["z_boundary"],
         mode="lines+markers",
-        name="Lower OBF bound",
+        name="Нижняя граница OBF",
         line=dict(color=PALETTE[1], dash="dot"),
     ))
     fig.update_layout(
-        title="Sequential Monitoring",
-        xaxis_title="Interim look",
-        yaxis_title="z-statistic",
+        title="Последовательный мониторинг",
+        xaxis_title="Промежуточный просмотр",
+        yaxis_title="z-статистика",
         template="plotly_white",
         margin=dict(l=40, r=20, t=60, b=40),
     )
@@ -289,12 +311,12 @@ def sample_size_curve(
         grid = np.linspace(max(0.01, mde / 2), max(0.12, mde * 2), 12)
         sizes = [sample_size_proportions(baseline, x, alpha=alpha, power=power) for x in grid]
         x = grid * 100
-        x_title = "Absolute MDE (pp)"
+        x_title = "Абсолютный MDE (п.п.)"
     elif family == "continuous":
         grid = np.linspace(max(0.1, mde / 2), max(2.0, mde * 2), 12)
         sizes = [sample_size_continuous(sigma, x, alpha=alpha, power=power) for x in grid]
         x = grid
-        x_title = "Absolute MDE"
+        x_title = "Абсолютный MDE"
     else:
         if hazard_ratio < 1:
             low = max(0.65, hazard_ratio - 0.15)
@@ -312,11 +334,72 @@ def sample_size_curve(
         y=sizes,
         markers=True,
         color_discrete_sequence=[PALETTE[3]],
-        labels={"x": x_title, "y": "Required sample"},
+        labels={"x": x_title, "y": "Требуемый размер выборки"},
     )
     fig.update_layout(
-        title="Sensitivity to Effect Size",
+        title="Чувствительность к размеру эффекта",
         template="plotly_white",
         margin=dict(l=40, r=20, t=60, b=40),
     )
     return fig
+
+
+def familywise_metric_table(
+    df: pd.DataFrame,
+    n_per_arm: int,
+    uplift_pct: float,
+    alpha: float,
+    seed: int,
+) -> pd.DataFrame:
+    """Evaluate a family of binary KPIs with Holm and BH corrections."""
+    rng = np.random.default_rng(seed)
+    replace = n_per_arm > len(df)
+    control_idx = rng.choice(df.index.to_numpy(), size=n_per_arm, replace=replace)
+    treatment_idx = rng.choice(df.index.to_numpy(), size=n_per_arm, replace=replace)
+    control_df = df.loc[control_idx]
+    treatment_df = df.loc[treatment_idx]
+
+    rows = []
+    raw_p = []
+    for idx, (metric, meta) in enumerate(SIM_METRICS.items()):
+        control = control_df[metric].to_numpy(dtype=int)
+        treatment = treatment_df[metric].to_numpy(dtype=int)
+        target = float(np.clip(control.mean() * (1 + uplift_pct / 100), 0.001, 0.999))
+        shifted = _shift_binary_rate(
+            treatment,
+            target,
+            np.random.default_rng(seed + idx + 1),
+        )
+        result = proportion_z_test(
+            int(control.sum()),
+            len(control),
+            int(shifted.sum()),
+            len(shifted),
+            alpha=alpha,
+        )
+        raw_p.append(result["p_value"])
+        rows.append(
+            {
+                "metric": metric,
+                "label": meta["label"],
+                "control_rate": result["control_rate"],
+                "treatment_rate": result["treatment_rate"],
+                "absolute_diff": result["absolute_diff"],
+                "p_raw": result["p_value"],
+            }
+        )
+
+    holm = adjust_pvalues(raw_p, method="holm")
+    bh = adjust_pvalues(raw_p, method="bh")
+    for row, p_holm, p_bh in zip(rows, holm, bh):
+        row["p_holm"] = p_holm
+        row["p_bh"] = p_bh
+        row["holm_significant"] = p_holm < alpha
+        row["bh_significant"] = p_bh < alpha
+
+    return pd.DataFrame(rows)
+
+
+def bootstrap_summary(control: np.ndarray, treatment: np.ndarray, seed: int) -> dict:
+    """Convenience wrapper for a bootstrap uplift summary."""
+    return bootstrap_uplift_ci(control, treatment, confidence=0.95, n_boot=2000, seed=seed)

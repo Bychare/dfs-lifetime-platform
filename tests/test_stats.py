@@ -4,13 +4,15 @@ import numpy as np
 import pandas as pd
 import pytest
 from app.components.stats import (
-    sample_size_proportions,
-    sample_size_continuous,
-    sample_size_survival,
-    normality_test,
-    proportion_z_test,
+    adjust_pvalues,
     beta_binomial_ab_test,
+    bootstrap_uplift_ci,
+    normality_test,
     obrien_fleming_bounds,
+    proportion_z_test,
+    sample_size_continuous,
+    sample_size_proportions,
+    sample_size_survival,
 )
 
 
@@ -80,3 +82,22 @@ def test_beta_binomial_ab_test_prefers_better_arm():
 def test_obrien_fleming_bounds_decrease_over_time():
     bounds = obrien_fleming_bounds(n_looks=5, alpha=0.05)
     assert bounds["z_boundary"].iloc[0] > bounds["z_boundary"].iloc[-1]
+
+
+def test_bootstrap_uplift_ci_detects_positive_effect():
+    control = np.array([0, 0, 1, 0, 1, 0, 0, 1] * 50)
+    treatment = np.array([1, 1, 1, 0, 1, 1, 0, 1] * 50)
+    result = bootstrap_uplift_ci(control, treatment, n_boot=1000, seed=11)
+    assert result["point_estimate"] > 0
+    assert result["ci_high"] > result["ci_low"]
+    assert result["ci_low"] > -0.05
+
+
+def test_adjust_pvalues_holm_and_bh_are_monotone_and_bounded():
+    p_values = np.array([0.004, 0.02, 0.03, 0.2])
+    holm = adjust_pvalues(p_values, method="holm")
+    bh = adjust_pvalues(p_values, method="bh")
+    assert np.all((holm >= 0) & (holm <= 1))
+    assert np.all((bh >= 0) & (bh <= 1))
+    assert holm[0] <= holm[-1]
+    assert bh[0] <= bh[-1]

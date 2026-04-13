@@ -217,6 +217,67 @@ def beta_binomial_ab_test(
     }
 
 
+def bootstrap_uplift_ci(
+    control: np.ndarray,
+    treatment: np.ndarray,
+    confidence: float = 0.95,
+    n_boot: int = 2000,
+    seed: int = 42,
+) -> dict:
+    """Non-parametric bootstrap CI for the difference in arm means."""
+    control = np.asarray(control, dtype=float)
+    treatment = np.asarray(treatment, dtype=float)
+    if len(control) == 0 or len(treatment) == 0:
+        raise ValueError("Both arms must contain at least one observation.")
+    if not 0 < confidence < 1:
+        raise ValueError("confidence must be in (0, 1).")
+    if n_boot < 200:
+        raise ValueError("n_boot must be at least 200.")
+
+    rng = np.random.default_rng(seed)
+    boot_control = rng.choice(control, size=(n_boot, len(control)), replace=True).mean(axis=1)
+    boot_treatment = rng.choice(
+        treatment, size=(n_boot, len(treatment)), replace=True
+    ).mean(axis=1)
+    diff_draws = boot_treatment - boot_control
+    alpha = 1 - confidence
+
+    return {
+        "point_estimate": float(np.mean(treatment) - np.mean(control)),
+        "ci_low": float(np.quantile(diff_draws, alpha / 2)),
+        "ci_high": float(np.quantile(diff_draws, 1 - alpha / 2)),
+        "std_error": float(diff_draws.std(ddof=1)),
+        "diff_draws": diff_draws,
+    }
+
+
+def adjust_pvalues(p_values, method: str = "holm") -> np.ndarray:
+    """Holm or Benjamini-Hochberg correction for a family of p-values."""
+    p_values = np.asarray(p_values, dtype=float)
+    if p_values.ndim != 1:
+        raise ValueError("p_values must be one-dimensional.")
+    if np.any((p_values < 0) | (p_values > 1)):
+        raise ValueError("p_values must lie in [0, 1].")
+
+    n = len(p_values)
+    if n == 0:
+        return np.array([], dtype=float)
+
+    order = np.argsort(p_values)
+    ranked = p_values[order]
+
+    if method == "holm":
+        adjusted_ranked = np.maximum.accumulate((n - np.arange(n)) * ranked)
+    elif method == "bh":
+        adjusted_ranked = np.minimum.accumulate((ranked * n / (np.arange(n) + 1))[::-1])[::-1]
+    else:
+        raise ValueError("method must be either 'holm' or 'bh'.")
+
+    adjusted = np.empty(n, dtype=float)
+    adjusted[order] = np.clip(adjusted_ranked, 0, 1)
+    return adjusted
+
+
 def obrien_fleming_bounds(n_looks: int, alpha: float = 0.05) -> pd.DataFrame:
     """Two-sided O'Brien-Fleming z-boundaries across equally spaced looks."""
     if n_looks < 2:
