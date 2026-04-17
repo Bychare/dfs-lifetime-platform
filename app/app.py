@@ -40,11 +40,11 @@ sidebar = dbc.Nav(
             active="exact",
         )
         for label, href, icon in [
-            ("Overview & EDA",   "/",              "bi-bar-chart-line"),
-            ("Survival Analysis", "/survival",     "bi-heart-pulse"),
-            ("A/B Testing",      "/ab-testing",    "bi-toggles"),
-            ("Segmentation",     "/segmentation",  "bi-diagram-3"),
-            ("Churn Model",      "/churn-model",   "bi-cpu"),
+            ("Overview & EDA",    "/",            "bi-bar-chart-line"),
+            ("Survival Analysis", "/survival",    "bi-heart-pulse"),
+            ("A/B Testing",       "/ab-testing",  "bi-toggles"),
+            ("Segmentation",      "/segmentation","bi-diagram-3"),
+            ("Churn Model",       "/churn-model", "bi-cpu"),
         ]
     ],
     vertical=True,

@@ -1,4 +1,4 @@
-"""Module 3: A/B Test design, simulation, and monitoring."""
+"""Module 3: A/B test design, simulation, and monitoring."""
 
 import dash
 import dash_bootstrap_components as dbc
@@ -23,12 +23,7 @@ from components.ab_testing_helpers import (
     sequential_figure,
     simulate_binary_experiment,
 )
-from components.layout_utils import (
-    glossary_accordion,
-    kpi_card,
-    methodological_notes,
-    section_header,
-)
+from components.layout_utils import glossary_accordion, kpi_card, methodological_notes, section_header
 from components.stats import (
     beta_binomial_ab_test,
     proportion_z_test,
@@ -38,71 +33,54 @@ from components.stats import (
     sequential_proportion_monitor,
 )
 
-dash.register_page(__name__, path="/ab-testing", name="A/B-тестирование", order=2)
+dash.register_page(__name__, path="/ab-testing", name="A/B Testing", order=2)
 
 
 layout = html.Div([
-    html.H3("Движок экспериментов", className="mb-1"),
+    html.H3("Experimentation Engine", className="mb-1"),
     html.P(
-        "Планирование, симуляция и мониторинг продуктовых экспериментов в стиле DFS "
-        "с использованием расчёта размера выборки, частотного вывода, байесовских "
-        "апостериорных распределений и sequential-границ остановки.",
+        "Planning, simulation, and monitoring of DFS-style product experiments using sample-size design, "
+        "frequentist inference, Bayesian posteriors, and sequential stopping boundaries.",
         className="text-muted",
     ),
-
-    glossary_accordion(
-        "Глоссарий — термины экспериментального дизайна на этой странице",
-        AB_GLOSSARY_MD,
-    ),
-
+    glossary_accordion("Glossary: experimentation terms used on this page", AB_GLOSSARY_MD),
     html.Div(id="ab-kpi-row", className="mb-4"),
-
     section_header(
-        "Калькулятор размера выборки",
-        "Аппроксимации в стиле Lehr для бинарных и непрерывных KPI плюс "
-        "планирование по Шёнфельду для survival-endpoints.",
+        "Sample Size Calculator",
+        "Lehr-style approximations for binary and continuous KPIs, plus Schoenfeld planning for survival endpoints.",
     ),
     dbc.Row([
         dbc.Col([
-            dbc.Label("Тип дизайна"),
+            dbc.Label("Design family"),
             dbc.Select(
                 id="ab-family",
                 options=[
-                    {"label": "Бинарный KPI: конверсия / retention", "value": "binary"},
-                    {"label": "Непрерывная метрика дохода", "value": "continuous"},
+                    {"label": "Binary KPI: conversion / retention", "value": "binary"},
+                    {"label": "Continuous metric: spend / revenue", "value": "continuous"},
                     {"label": "Survival / time-to-event", "value": "survival"},
                 ],
                 value="binary",
             ),
         ], md=3),
-        dbc.Col([
-            dbc.Label("Alpha"),
-            dbc.Input(id="ab-alpha", type="number", min=0.001, max=0.2, step=0.005, value=0.05),
-        ], md=2),
-        dbc.Col([
-            dbc.Label("Power"),
-            dbc.Input(id="ab-power", type="number", min=0.5, max=0.99, step=0.01, value=0.8),
-        ], md=2),
-        dbc.Col([
-            dbc.Label("Дневной поток подходящих пользователей"),
-            dbc.Input(id="ab-traffic", type="number", min=10, step=10, value=400),
-        ], md=2),
+        dbc.Col([dbc.Label("Alpha"), dbc.Input(id="ab-alpha", type="number", min=0.001, max=0.2, step=0.005, value=0.05)], md=2),
+        dbc.Col([dbc.Label("Power"), dbc.Input(id="ab-power", type="number", min=0.5, max=0.99, step=0.01, value=0.8)], md=2),
+        dbc.Col([dbc.Label("Eligible daily traffic"), dbc.Input(id="ab-traffic", type="number", min=10, step=10, value=400)], md=2),
     ], className="mb-3"),
     dbc.Row([
         dbc.Col([
-            dbc.Label("Базовый уровень"),
+            dbc.Label("Baseline rate"),
             dbc.Input(id="ab-baseline", type="number", min=0.01, max=0.99, step=0.01, value=0.35),
-            html.Small("Для бинарного дизайна: конверсия или retention в control.", className="text-muted"),
+            html.Small("For binary designs: conversion or retention in control.", className="text-muted"),
         ], md=3),
         dbc.Col([
             dbc.Label("MDE"),
             dbc.Input(id="ab-mde", type="number", min=0.001, step=0.005, value=0.03),
-            html.Small("Для бинарного дизайна: абсолютный uplift в процентных пунктах.", className="text-muted"),
+            html.Small("For binary designs: absolute uplift in percentage points.", className="text-muted"),
         ], md=3),
         dbc.Col([
             dbc.Label("Sigma"),
             dbc.Input(id="ab-sigma", type="number", min=0.1, step=0.1, value=1.0),
-            html.Small("Для непрерывного дизайна: стандартное отклонение KPI.", className="text-muted"),
+            html.Small("For continuous designs: standard deviation of the KPI.", className="text-muted"),
         ], md=3),
         dbc.Col([
             dbc.Label("Event rate / hazard ratio"),
@@ -110,7 +88,7 @@ layout = html.Div([
                 dbc.Input(id="ab-event-rate", type="number", min=0.01, max=1, step=0.01, value=0.23),
                 dbc.Input(id="ab-hazard-ratio", type="number", min=0.5, max=1.5, step=0.01, value=0.85),
             ]),
-            html.Small("Для survival-дизайна: наблюдаемая частота событий и целевой HR.", className="text-muted"),
+            html.Small("For survival designs: observed event rate and target HR.", className="text-muted"),
         ], md=3),
     ], className="mb-3"),
     html.Div(id="ab-sample-size-cards", className="mb-3"),
@@ -118,40 +96,19 @@ layout = html.Div([
         dbc.Col(dcc.Graph(id="ab-sample-size-fig"), md=8),
         dbc.Col(dbc.Alert(id="ab-sample-size-note", color="light", className="py-2 small"), md=4),
     ], className="mb-4"),
-
-    section_header(
-        "A/B-симулятор",
-        "Синтетические рандомизированные эксперименты на основе наблюдаемой DFS-когорты.",
-    ),
+    section_header("A/B Simulator", "Synthetic randomized experiments built from the observed DFS cohort."),
     dbc.Row([
         dbc.Col([
             dbc.Label("KPI"),
-            dbc.Select(
-                id="ab-metric",
-                options=[{"label": meta["label"], "value": key} for key, meta in SIM_METRICS.items()],
-                value="retained_30d",
-            ),
+            dbc.Select(id="ab-metric", options=[{"label": meta["label"], "value": key} for key, meta in SIM_METRICS.items()], value="retained_30d"),
         ], md=3),
         dbc.Col([
-            dbc.Label("Сегмент"),
-            dbc.Select(
-                id="ab-segment",
-                options=[{"label": label, "value": key} for key, label in SEGMENTS.items()],
-                value="all",
-            ),
+            dbc.Label("Segment"),
+            dbc.Select(id="ab-segment", options=[{"label": label, "value": key} for key, label in SEGMENTS.items()], value="all"),
         ], md=3),
-        dbc.Col([
-            dbc.Label("Размер на группу"),
-            dbc.Input(id="ab-n-per-arm", type="number", min=100, step=100, value=1500),
-        ], md=2),
-        dbc.Col([
-            dbc.Label("Относительный uplift (%)"),
-            dbc.Input(id="ab-uplift", type="number", min=-50, max=100, step=1, value=8),
-        ], md=2),
-        dbc.Col([
-            dbc.Label("Seed"),
-            dbc.Input(id="ab-seed", type="number", min=1, step=1, value=42),
-        ], md=2),
+        dbc.Col([dbc.Label("Sample per arm"), dbc.Input(id="ab-n-per-arm", type="number", min=100, step=100, value=1500)], md=2),
+        dbc.Col([dbc.Label("Relative uplift (%)"), dbc.Input(id="ab-uplift", type="number", min=-50, max=100, step=1, value=8)], md=2),
+        dbc.Col([dbc.Label("Seed"), dbc.Input(id="ab-seed", type="number", min=1, step=1, value=42)], md=2),
     ], className="mb-3"),
     html.Div(id="ab-sim-cards", className="mb-3"),
     dbc.Row([
@@ -159,33 +116,19 @@ layout = html.Div([
         dbc.Col(dcc.Graph(id="ab-posterior-fig"), md=6),
     ], className="mb-3"),
     dbc.Alert(id="ab-summary", color="info", className="mb-4"),
-
-    section_header(
-        "Устойчивость вывода",
-        "Робастный bootstrap-интервал для uplift и семейство KPI с поправками Holm/BH.",
-    ),
+    section_header("Inference Robustness", "Bootstrap uplift intervals and familywise KPI checks with Holm/BH corrections."),
     dbc.Row([
         dbc.Col(dbc.Alert(id="ab-bootstrap-summary", color="secondary", className="mb-3"), md=4),
         dbc.Col(html.Div(id="ab-multi-table"), md=8),
     ], className="mb-4"),
-
-    section_header(
-        "Последовательное тестирование",
-        "Промежуточные просмотры с двусторонними границами O'Brien-Fleming.",
-    ),
+    section_header("Sequential Testing", "Interim looks with two-sided O'Brien-Fleming stopping boundaries."),
     dbc.Row([
+        dbc.Col([dbc.Label("Number of interim looks"), dbc.Input(id="ab-looks", type="number", min=2, max=10, step=1, value=5)], md=2),
+        dbc.Col([dbc.Label("Monitoring alpha"), dbc.Input(id="ab-monitor-alpha", type="number", min=0.001, max=0.2, step=0.005, value=0.05)], md=2),
         dbc.Col([
-            dbc.Label("Число промежуточных просмотров"),
-            dbc.Input(id="ab-looks", type="number", min=2, max=10, step=1, value=5),
-        ], md=2),
-        dbc.Col([
-            dbc.Label("Alpha для мониторинга"),
-            dbc.Input(id="ab-monitor-alpha", type="number", min=0.001, max=0.2, step=0.005, value=0.05),
-        ], md=2),
-        dbc.Col([
-            dbc.Label("Интуиция по границам"),
+            dbc.Label("Boundary intuition"),
             dbc.Alert(
-                "На ранних просмотрах требуется значительно более высокая z-статистика; по мере накопления информации порог снижается.",
+                "Early looks require much stronger evidence; the threshold relaxes as information accumulates.",
                 color="light",
                 className="py-2 mb-0",
             ),
@@ -195,25 +138,23 @@ layout = html.Div([
         dbc.Col(dcc.Graph(id="ab-seq-fig"), md=7),
         dbc.Col(html.Div(id="ab-seq-table"), md=5),
     ]),
-
     methodological_notes(AB_NOTES_MD),
 ])
 
 
-@callback(
-    Output("ab-kpi-row", "children"),
-    Input("ab-metric", "value"),
-    Input("ab-segment", "value"),
-)
+@callback(Output("ab-kpi-row", "children"), Input("ab-metric", "value"), Input("ab-segment", "value"))
 def update_ab_kpis(metric: str, segment: str):
     df = segment_slice(ab_frame(), segment)
     rate = float(df[metric].mean())
+    median_fee = float(df["TotFees"].median())
+    churn_rate = float(df["is_churned"].mean())
+    mean_risk = float(df["RiskScore"].mean())
     return dbc.Row([
-        dbc.Col(kpi_card("Подходящие игроки", f"{len(df):,}"), md=True),
-        dbc.Col(kpi_card("Наблюдаемый baseline", pct(rate), "info"), md=True),
-        dbc.Col(kpi_card("Медианный fee", f"${df['TotFees'].median():,.0f}"), md=True),
-        dbc.Col(kpi_card("Churn Rate", pct(df['is_churned'].mean()), "danger"), md=True),
-        dbc.Col(kpi_card("Средний Risk Score", f"{df['RiskScore'].mean():.1f}", "warning"), md=True),
+        dbc.Col(kpi_card("Eligible players", f"{df.height:,}"), md=True),
+        dbc.Col(kpi_card("Observed baseline", pct(rate), "info"), md=True),
+        dbc.Col(kpi_card("Median fee", f"${median_fee:,.0f}"), md=True),
+        dbc.Col(kpi_card("Churn Rate", pct(churn_rate), "danger"), md=True),
+        dbc.Col(kpi_card("Average Risk Score", f"{mean_risk:.1f}", "warning"), md=True),
     ])
 
 
@@ -231,17 +172,7 @@ def update_ab_kpis(metric: str, segment: str):
     Input("ab-event-rate", "value"),
     Input("ab-hazard-ratio", "value"),
 )
-def update_sample_size(
-    family: str,
-    alpha,
-    power,
-    traffic,
-    baseline,
-    mde,
-    sigma,
-    event_rate,
-    hazard_ratio,
-):
+def update_sample_size(family, alpha, power, traffic, baseline, mde, sigma, event_rate, hazard_ratio):
     alpha = safe_float(alpha, 0.05)
     power = safe_float(power, 0.80)
     traffic = max(safe_int(traffic, 400), 1)
@@ -254,49 +185,36 @@ def update_sample_size(
     if family == "binary":
         per_arm = sample_size_proportions(baseline, mde, alpha=alpha, power=power)
         total = per_arm * 2
-        primary_value = f"{per_arm:,} на группу"
-        assumptions = (
-            f"Baseline = {pct(baseline)}, MDE = {mde * 100:.1f} п.п., "
-            f"alpha = {alpha:.3f}, power = {power:.0%}."
-        )
+        primary_value = f"{per_arm:,} per arm"
+        assumptions = f"Baseline = {pct(baseline)}, MDE = {mde * 100:.1f} pp, alpha = {alpha:.3f}, power = {power:.0%}."
     elif family == "continuous":
         per_arm = sample_size_continuous(sigma, mde, alpha=alpha, power=power)
         total = per_arm * 2
-        primary_value = f"{per_arm:,} на группу"
-        assumptions = (
-            f"Sigma = {sigma:.2f}, MDE = {mde:.2f}, "
-            f"alpha = {alpha:.3f}, power = {power:.0%}."
-        )
+        primary_value = f"{per_arm:,} per arm"
+        assumptions = f"Sigma = {sigma:.2f}, MDE = {mde:.2f}, alpha = {alpha:.3f}, power = {power:.0%}."
     else:
         total = sample_size_survival(hazard_ratio, event_rate, alpha=alpha, power=power)
-        per_arm = int(np.ceil(total / 2))
-        primary_value = f"{total:,} всего"
-        assumptions = (
-            f"Event rate = {pct(event_rate)}, HR = {hazard_ratio:.2f}, "
-            f"alpha = {alpha:.3f}, power = {power:.0%}."
-        )
+        primary_value = f"{total:,} total"
+        assumptions = f"Event rate = {pct(event_rate)}, HR = {hazard_ratio:.2f}, alpha = {alpha:.3f}, power = {power:.0%}."
 
     days = total / traffic
     cards = dbc.Row([
-        dbc.Col(kpi_card("Требуемая выборка", primary_value), md=True),
-        dbc.Col(kpi_card("Общий объём", f"{total:,} игроков", "info"), md=True),
-        dbc.Col(kpi_card("Длительность при этом трафике", f"{days:.1f} дней", "warning"), md=True),
-        dbc.Col(kpi_card("Уровень значимости", f"{alpha:.1%}", "danger"), md=True),
+        dbc.Col(kpi_card("Required sample", primary_value), md=True),
+        dbc.Col(kpi_card("Total volume", f"{total:,} players", "info"), md=True),
+        dbc.Col(kpi_card("Runtime at current traffic", f"{days:.1f} days", "warning"), md=True),
+        dbc.Col(kpi_card("Significance level", f"{alpha:.1%}", "danger"), md=True),
     ])
-    fig = sample_size_curve(
-        family, baseline, mde, sigma, hazard_ratio, event_rate, alpha, power
-    )
     note = [
-        html.Div("Пояснения", className="fw-semibold mb-2"),
+        html.Div("Notes", className="fw-semibold mb-2"),
         html.P(assumptions, className="mb-2 small"),
         html.Ul([
-            html.Li("Бинарный дизайн: retention / conversion."),
-            html.Li("Непрерывный дизайн: spend / revenue."),
-            html.Li("Survival-дизайн: time to churn / milestone."),
-            html.Li("Чем меньше эффект, тем больше требуемая выборка."),
+            html.Li("Binary design: retention / conversion."),
+            html.Li("Continuous design: spend / revenue."),
+            html.Li("Survival design: time to churn / milestone."),
+            html.Li("Smaller effects require larger samples."),
         ], className="small mb-0 ps-3"),
     ]
-    return cards, fig, note
+    return cards, sample_size_curve(family, baseline, mde, sigma, hazard_ratio, event_rate, alpha, power), note
 
 
 @callback(
@@ -316,15 +234,7 @@ def update_sample_size(
     Input("ab-looks", "value"),
     Input("ab-monitor-alpha", "value"),
 )
-def update_simulation(
-    metric: str,
-    segment: str,
-    n_per_arm,
-    uplift,
-    seed,
-    looks,
-    monitor_alpha,
-):
+def update_simulation(metric, segment, n_per_arm, uplift, seed, looks, monitor_alpha):
     n_per_arm = max(safe_int(n_per_arm, 1500), 50)
     uplift = safe_float(uplift, 8.0)
     seed = safe_int(seed, 42)
@@ -332,63 +242,37 @@ def update_simulation(
     monitor_alpha = safe_float(monitor_alpha, 0.05)
 
     df = segment_slice(ab_frame(), segment)
-    values = df[metric].dropna().astype(int)
-    control, treatment, baseline, target = simulate_binary_experiment(
-        values, n_per_arm=n_per_arm, uplift_pct=uplift, seed=seed
-    )
+    values = df[metric]
+    control, treatment, baseline, target = simulate_binary_experiment(values, n_per_arm=n_per_arm, uplift_pct=uplift, seed=seed)
 
-    frequentist = proportion_z_test(
-        int(control.sum()),
-        len(control),
-        int(treatment.sum()),
-        len(treatment),
-        alpha=monitor_alpha,
-    )
-    bayes = beta_binomial_ab_test(
-        int(control.sum()),
-        len(control),
-        int(treatment.sum()),
-        len(treatment),
-        seed=seed,
-    )
+    frequentist = proportion_z_test(int(control.sum()), len(control), int(treatment.sum()), len(treatment), alpha=monitor_alpha)
+    bayes = beta_binomial_ab_test(int(control.sum()), len(control), int(treatment.sum()), len(treatment), seed=seed)
     boot = bootstrap_summary(control, treatment, seed=seed)
-    family_df = familywise_metric_table(
-        df, n_per_arm=n_per_arm, uplift_pct=uplift, alpha=monitor_alpha, seed=seed
-    )
-    seq_df, stop_look = sequential_proportion_monitor(
-        control, treatment, n_looks=looks, alpha=monitor_alpha
-    )
+    family_df = familywise_metric_table(df, n_per_arm=n_per_arm, uplift_pct=uplift, alpha=monitor_alpha, seed=seed)
+    seq_df, stop_look = sequential_proportion_monitor(control, treatment, n_looks=looks, alpha=monitor_alpha)
 
     cards = dbc.Row([
-        dbc.Col(kpi_card("Целевой baseline", pct(baseline), "info"), md=True),
-        dbc.Col(kpi_card("Внесённый uplift", f"{uplift:.1f}%", "warning"), md=True),
-        dbc.Col(kpi_card("Наблюдаемый эффект", f"{frequentist['absolute_diff'] * 100:.2f} п.п."), md=True),
-        dbc.Col(kpi_card("Частотный p-value", f"{frequentist['p_value']:.4f}", "danger"), md=True),
+        dbc.Col(kpi_card("Target baseline", pct(baseline), "info"), md=True),
+        dbc.Col(kpi_card("Injected uplift", f"{uplift:.1f}%", "warning"), md=True),
+        dbc.Col(kpi_card("Observed effect", f"{frequentist['absolute_diff'] * 100:.2f} pp"), md=True),
+        dbc.Col(kpi_card("Frequentist p-value", f"{frequentist['p_value']:.4f}", "danger"), md=True),
         dbc.Col(kpi_card("P(Treat > Ctrl)", pct(bayes["prob_treatment_beats_control"]), "success"), md=True),
     ])
 
     summary = (
-        f"{SIM_METRICS[metric]['label']} в сегменте {SEGMENTS[segment]}: в control наблюдается "
-        f"{pct(frequentist['control_rate'])}, в treatment — {pct(frequentist['treatment_rate'])}. "
-        f"Целевой уровень после внесения эффекта составлял {pct(target)}. "
-        f"Частотный 95% CI для uplift: от {frequentist['ci_low'] * 100:.2f} до "
-        f"{frequentist['ci_high'] * 100:.2f} п.п. "
-        f"Bootstrap 95% CI: от {boot['ci_low'] * 100:.2f} до {boot['ci_high'] * 100:.2f} п.п. "
-        f"Байесовский posterior даёт вероятность превосходства treatment над control "
-        f"на уровне {pct(bayes['prob_treatment_beats_control'])}. "
-        f"{'Последовательный мониторинг пересекает границу на просмотре №' + str(stop_look) + '.' if stop_look else 'В этом прогоне границы OBF не были пересечены.'}"
+        f"{SIM_METRICS[metric]['label']} in {SEGMENTS[segment]}: control observes {pct(frequentist['control_rate'])}, "
+        f"treatment observes {pct(frequentist['treatment_rate'])}. The injected target rate was {pct(target)}. "
+        f"Frequentist 95% CI for uplift: {frequentist['ci_low'] * 100:.2f} to {frequentist['ci_high'] * 100:.2f} pp. "
+        f"Bootstrap 95% CI: {boot['ci_low'] * 100:.2f} to {boot['ci_high'] * 100:.2f} pp. "
+        f"The Bayesian posterior puts P(Treat > Ctrl) at {pct(bayes['prob_treatment_beats_control'])}. "
+        f"{'Sequential monitoring crosses the boundary at look #' + str(stop_look) + '.' if stop_look else 'In this run, no OBF boundary was crossed.'}"
     )
 
     bootstrap_note = [
         html.Div("Bootstrap 95% CI", className="fw-semibold mb-2"),
+        html.P(f"Robust uplift estimate: {boot['ci_low'] * 100:.2f} to {boot['ci_high'] * 100:.2f} pp.", className="mb-2"),
         html.P(
-            f"Робастная оценка uplift: от {boot['ci_low'] * 100:.2f} до "
-            f"{boot['ci_high'] * 100:.2f} п.п.",
-            className="mb-2",
-        ),
-        html.P(
-            f"Точечная оценка = {boot['point_estimate'] * 100:.2f} п.п., "
-            f"bootstrap SE = {boot['std_error'] * 100:.2f} п.п.",
+            f"Point estimate = {boot['point_estimate'] * 100:.2f} pp, bootstrap SE = {boot['std_error'] * 100:.2f} pp.",
             className="mb-0 small",
         ),
     ]
@@ -402,28 +286,19 @@ def update_simulation(
 
     multi_table = dbc.Table(
         [
-            html.Thead(html.Tr([
-                html.Th("KPI"),
-                html.Th("Ctrl"),
-                html.Th("Treat"),
-                html.Th("Uplift"),
-                html.Th("p (raw)"),
-                html.Th("p (Holm)"),
-                html.Th("p (BH)"),
-                html.Th("Решение"),
-            ])),
+            html.Thead(html.Tr([html.Th("KPI"), html.Th("Ctrl"), html.Th("Treat"), html.Th("Uplift"), html.Th("p (raw)"), html.Th("p (Holm)"), html.Th("p (BH)"), html.Th("Decision")])),
             html.Tbody([
                 html.Tr([
                     html.Td(row["label"]),
                     html.Td(pct(row["control_rate"])),
                     html.Td(pct(row["treatment_rate"])),
-                    html.Td(f"{row['absolute_diff'] * 100:.2f} п.п."),
+                    html.Td(f"{row['absolute_diff'] * 100:.2f} pp"),
                     html.Td(f"{row['p_raw']:.4f}"),
                     html.Td(f"{row['p_holm']:.4f}"),
                     html.Td(f"{row['p_bh']:.4f}"),
                     html.Td(correction_badge(row)),
                 ])
-                for _, row in family_df.iterrows()
+                for row in family_df.to_dicts()
             ]),
         ],
         bordered=True,
@@ -435,15 +310,7 @@ def update_simulation(
 
     seq_table = dbc.Table(
         [
-            html.Thead(html.Tr([
-                html.Th("Просмотр"),
-                html.Th("n / группа"),
-                html.Th("Ctrl"),
-                html.Th("Treat"),
-                html.Th("z"),
-                html.Th("Граница"),
-                html.Th("Остановить?"),
-            ])),
+            html.Thead(html.Tr([html.Th("Look"), html.Th("n / arm"), html.Th("Ctrl"), html.Th("Treat"), html.Th("z"), html.Th("Boundary"), html.Th("Stop?")])),
             html.Tbody([
                 html.Tr([
                     html.Td(int(row["look"])),
@@ -452,14 +319,9 @@ def update_simulation(
                     html.Td(pct(row["treatment_rate"])),
                     html.Td(f"{row['z_stat']:.2f}"),
                     html.Td(f"{row['z_boundary']:.2f}"),
-                    html.Td(
-                        dbc.Badge(
-                            "Пересечена" if row["crossed"] else "Продолжать",
-                            color="success" if row["crossed"] else "secondary",
-                        )
-                    ),
+                    html.Td(dbc.Badge("Crossed" if row["crossed"] else "Continue", color="success" if row["crossed"] else "secondary")),
                 ])
-                for _, row in seq_df.iterrows()
+                for row in seq_df.to_dicts()
             ]),
         ],
         bordered=True,

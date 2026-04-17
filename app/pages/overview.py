@@ -1,49 +1,54 @@
 """
 Module 1: EDA & Data Overview Dashboard.
-
-Landing page with KPI cards, distributions, correlation matrix,
-and US state map.
 """
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import html, dcc, callback, Input, Output
 import plotly.express as px
+import polars as pl
+from dash import Input, Output, callback, dcc, html
 
 from components.data_loader import get_players
-from components.plots import (
-    fig_histogram, fig_box_by_group, fig_correlation_heatmap,
-    fig_kpi_cards, PALETTE,
-)
 from components.layout_utils import kpi_card, section_header
+from components.plots import PALETTE, fig_box_by_group, fig_correlation_heatmap, fig_histogram, fig_kpi_cards
 
 dash.register_page(__name__, path="/", name="Overview & EDA", order=0)
 
 METRIC_OPTIONS = [
-    {"label": "Total Fees ($)", "value": "TotFees"},
-    {"label": "Total Winnings ($)", "value": "TotWinnings"},
+    {"label": "Total fees ($)", "value": "TotFees"},
+    {"label": "Total winnings ($)", "value": "TotWinnings"},
     {"label": "Net P&L ($)", "value": "net_pnl"},
-    {"label": "Contests Entered", "value": "nCont"},
-    {"label": "Active Days", "value": "nDays"},
-    {"label": "Avg Buy-In ($)", "value": "AvgBuyIn"},
+    {"label": "Number of contests", "value": "nCont"},
+    {"label": "Active days", "value": "nDays"},
+    {"label": "Average buy-in ($)", "value": "AvgBuyIn"},
     {"label": "Risk Score", "value": "RiskScore"},
     {"label": "Win Rate", "value": "win_rate"},
     {"label": "Intensity (contests/day)", "value": "intensity"},
-    {"label": "Type Diversity (entropy)", "value": "type_diversity"},
+    {"label": "Contest-type diversity", "value": "type_diversity"},
 ]
 
 GROUP_OPTIONS = [
     {"label": "None", "value": "none"},
     {"label": "Churned vs Active", "value": "is_churned"},
     {"label": "Multi-sport", "value": "is_multisport"},
-    {"label": "Dominant Contest Type", "value": "dominant_type"},
-    {"label": "Risk Quartile", "value": "risk_quartile"},
-    {"label": "Age Group", "value": "age_group"},
+    {"label": "Dominant contest type", "value": "dominant_type"},
+    {"label": "Risk quartile", "value": "risk_quartile"},
+    {"label": "Age group", "value": "age_group"},
 ]
 
+METRIC_LABELS = {option["value"]: option["label"] for option in METRIC_OPTIONS}
+
 CORRELATION_COLS = [
-    "TotFees", "TotWinnings", "net_pnl", "nCont", "nDays",
-    "AvgBuyIn", "RiskScore", "win_rate", "intensity", "type_diversity",
+    "TotFees",
+    "TotWinnings",
+    "net_pnl",
+    "nCont",
+    "nDays",
+    "AvgBuyIn",
+    "RiskScore",
+    "win_rate",
+    "intensity",
+    "type_diversity",
 ]
 
 GROUP_LABEL_MAPS = {
@@ -52,24 +57,32 @@ GROUP_LABEL_MAPS = {
 }
 
 
-def _overview_df():
+def _overview_df() -> pl.DataFrame:
     return get_players()
 
 
-def _apply_group_labels(df, group_col):
-    plot_df = df.copy()
+def _apply_group_labels(df: pl.DataFrame, group_col: str) -> pl.DataFrame:
     label_map = GROUP_LABEL_MAPS.get(group_col)
-    if label_map:
-        plot_df[group_col] = plot_df[group_col].map(label_map)
-    return plot_df
+    if not label_map:
+        return df
+    str_map = {str(key): value for key, value in label_map.items()}
+    return df.with_columns(
+        pl.col(group_col).cast(pl.Utf8).replace(str_map).alias(group_col)
+    )
 
 
-def _top_states_bar_figure(df):
-    us = df[df["country_name"] == "U.S.A."]
-    counts = us["state_name"].value_counts()
-    top20 = counts.head(20).rename_axis("state").reset_index(name="players")
+def _top_states_bar_figure(df: pl.DataFrame):
+    top20 = (
+        df.filter(pl.col("country_name").is_in(["United States", "U.S.A.", "USA"]))
+        .group_by("state_name")
+        .len()
+        .rename({"len": "players", "state_name": "state"})
+        .sort("players", descending=True)
+        .head(20)
+        .sort("players")
+    )
     fig = px.bar(
-        top20,
+        top20.to_pandas(),
         x="players",
         y="state",
         orientation="h",
@@ -80,45 +93,35 @@ def _top_states_bar_figure(df):
         title="Top 20 US States by Player Count",
         template="plotly_white",
         margin=dict(l=120, r=20, t=50, b=40),
-        yaxis=dict(autorange="reversed"),
         height=400,
     )
     return fig
 
 
-def _contest_type_figure(df):
-    counts = df["dominant_type"].value_counts()
+def _contest_type_figure(df: pl.DataFrame):
+    counts = df.group_by("dominant_type").len().rename({"len": "players"}).sort("players", descending=True)
     fig = px.pie(
-        names=counts.index, values=counts.values,
+        counts.to_pandas(),
+        names="dominant_type",
+        values="players",
         color_discrete_sequence=PALETTE,
     )
     fig.update_layout(title="Dominant Contest Type", template="plotly_white")
     return fig
 
-# ---------------------------------------------------------------------------
-# Layout
-# ---------------------------------------------------------------------------
 
 layout = html.Div([
-    html.H3("DFS Player Analytics — Overview", className="mb-1"),
+    html.H3("DFS Player Analytics Overview", className="mb-1"),
     html.P(
-        "DraftKings cohort: 10,385 players, NFL season 2014. "
+        "DraftKings cohort: 10,385 players from the 2014 NFL season. "
         "Source: Nelson et al. (2019), The Transparency Project.",
         className="text-muted",
     ),
-
-    # --- KPI row ---
     html.Div(id="kpi-row", className="mb-4"),
-
-    # --- Controls ---
     dbc.Row([
         dbc.Col([
             dbc.Label("Metric", html_for="metric-select"),
-            dbc.Select(
-                id="metric-select",
-                options=METRIC_OPTIONS,
-                value="TotFees",
-            ),
+            dbc.Select(id="metric-select", options=METRIC_OPTIONS, value="TotFees"),
         ], md=3),
         dbc.Col([
             dbc.Label("Log scale", html_for="log-switch"),
@@ -131,28 +134,20 @@ layout = html.Div([
             ),
         ], md=2),
         dbc.Col([
-            dbc.Label("Group by", html_for="group-select"),
-            dbc.Select(
-                id="group-select",
-                options=GROUP_OPTIONS,
-                value="none",
-            ),
+            dbc.Label("Grouping", html_for="group-select"),
+            dbc.Select(id="group-select", options=GROUP_OPTIONS, value="none"),
         ], md=3),
     ], className="mb-4"),
-
-    # --- Charts ---
     dbc.Row([
         dbc.Col(dcc.Graph(id="histogram-chart"), md=6),
         dbc.Col(dcc.Graph(id="box-chart"), md=6),
     ]),
-
-    section_header("Correlation Matrix", "Spearman rank correlations between key metrics"),
+    section_header("Correlation Matrix", "Spearman rank correlations between key player metrics"),
     dbc.Row([
         dbc.Col(dcc.Graph(id="corr-heatmap"), md=6),
         dbc.Col(dcc.Graph(id="state-map"), md=6),
     ]),
-
-    section_header("Contest Type Distribution"),
+    section_header("Contest-Type Composition"),
     dbc.Row([
         dbc.Col(dcc.Graph(id="contest-type-chart"), md=6),
         dbc.Col(dcc.Graph(id="churn-by-group-chart"), md=6),
@@ -160,36 +155,25 @@ layout = html.Div([
 ])
 
 
-# ---------------------------------------------------------------------------
-# Callbacks
-# ---------------------------------------------------------------------------
-
-@callback(
-    Output("kpi-row", "children"),
-    Input("metric-select", "value"),  # triggers on page load
-)
+@callback(Output("kpi-row", "children"), Input("metric-select", "value"))
 def update_kpis(_):
     df = _overview_df()
     kpis = fig_kpi_cards(df)
     return dbc.Row([
         dbc.Col(kpi_card("Players", f"{kpis['total_players']:,}"), md=True),
         dbc.Col(kpi_card("Churn Rate", kpis["churn_rate"], "danger"), md=True),
-        dbc.Col(kpi_card("Median Fees", kpis["median_fees"]), md=True),
-        dbc.Col(kpi_card("Median Net P&L", kpis["median_net"], "warning"), md=True),
-        dbc.Col(kpi_card("% Losers", kpis["pct_losers"], "danger"), md=True),
-        dbc.Col(kpi_card("Median Active Days", kpis["median_days"]), md=True),
-        dbc.Col(kpi_card("Multi-sport", kpis["multisport_pct"], "info"), md=True),
+        dbc.Col(kpi_card("Median fees", kpis["median_fees"]), md=True),
+        dbc.Col(kpi_card("Median net P&L", kpis["median_net"], "warning"), md=True),
+        dbc.Col(kpi_card("Losing players", kpis["pct_losers"], "danger"), md=True),
+        dbc.Col(kpi_card("Median active days", kpis["median_days"]), md=True),
+        dbc.Col(kpi_card("Multi-sport share", kpis["multisport_pct"], "info"), md=True),
     ])
 
 
-@callback(
-    Output("histogram-chart", "figure"),
-    Input("metric-select", "value"),
-    Input("log-switch", "value"),
-)
+@callback(Output("histogram-chart", "figure"), Input("metric-select", "value"), Input("log-switch", "value"))
 def update_histogram(metric, log_switch):
     df = _overview_df()
-    return fig_histogram(df[metric].dropna(), metric, log_x="log" in log_switch)
+    return fig_histogram(df[metric], METRIC_LABELS[metric], log_x="log" in log_switch)
 
 
 @callback(
@@ -203,53 +187,51 @@ def update_box(metric, group, log_switch):
     if group == "none":
         group = "is_churned"
     plot_df = _apply_group_labels(df, group)
-    return fig_box_by_group(plot_df, metric, group, log_y="log" in log_switch)
+    return fig_box_by_group(
+        plot_df,
+        metric,
+        group,
+        log_y="log" in log_switch,
+        value_label=METRIC_LABELS[metric],
+    )
 
 
-@callback(
-    Output("corr-heatmap", "figure"),
-    Input("metric-select", "value"),  # just for trigger
-)
+@callback(Output("corr-heatmap", "figure"), Input("metric-select", "value"))
 def update_corr(_):
     return fig_correlation_heatmap(_overview_df(), CORRELATION_COLS)
 
 
-@callback(
-    Output("state-map", "figure"),
-    Input("metric-select", "value"),
-)
+@callback(Output("state-map", "figure"), Input("metric-select", "value"))
 def update_map(_):
     return _top_states_bar_figure(_overview_df())
 
 
-@callback(
-    Output("contest-type-chart", "figure"),
-    Input("metric-select", "value"),
-)
+@callback(Output("contest-type-chart", "figure"), Input("metric-select", "value"))
 def update_contest_types(_):
     return _contest_type_figure(_overview_df())
 
 
-@callback(
-    Output("churn-by-group-chart", "figure"),
-    Input("group-select", "value"),
-)
+@callback(Output("churn-by-group-chart", "figure"), Input("group-select", "value"))
 def update_churn_by_group(group):
     df = _overview_df()
     if group == "none":
         group = "dominant_type"
     plot_df = _apply_group_labels(df, group)
-
     churn_rates = (
-        plot_df.groupby(group)["is_churned"]
-        .agg(["mean", "count"])
-        .reset_index()
-        .rename(columns={"mean": "churn_rate", "count": "n"})
+        plot_df.group_by(group)
+        .agg([
+            pl.col("is_churned").mean().alias("churn_rate"),
+            pl.len().alias("n"),
+        ])
+        .with_columns((pl.col("churn_rate") * 100).alias("churn_pct"))
+        .sort(group)
     )
-    churn_rates["churn_pct"] = churn_rates["churn_rate"] * 100
     fig = px.bar(
-        churn_rates, x=group, y="churn_pct",
-        text="n", color_discrete_sequence=[PALETTE[1]],
+        churn_rates.to_pandas(),
+        x=group,
+        y="churn_pct",
+        text="n",
+        color_discrete_sequence=[PALETTE[1]],
         labels={"churn_pct": "Churn Rate (%)"},
     )
     fig.update_layout(title=f"Churn Rate by {group}", template="plotly_white")
