@@ -17,13 +17,13 @@ def normality_test(series: pl.Series, alpha: float = 0.05) -> dict:
         rng = np.random.default_rng(42)
         sample = rng.choice(sample, size=5000, replace=False)
     stat, p = stats.shapiro(sample)
-    return {"test": "Shapiro-Wilk", "statistic": stat, "p_value": p, "normal": p > alpha}
+    return {"test": "Shapiro-Wilk", "statistic": stat, "p_value": p, "normal": bool(p > alpha)}
 
 
 def levene_test(groups: list[pl.Series], alpha: float = 0.05) -> dict:
     clean = [_clean_series(group) for group in groups]
     stat, p = stats.levene(*clean)
-    return {"test": "Levene", "statistic": stat, "p_value": p, "equal_var": p > alpha}
+    return {"test": "Levene", "statistic": stat, "p_value": p, "equal_var": bool(p > alpha)}
 
 
 def kruskal_wallis(groups: list[pl.Series]) -> dict:
@@ -38,6 +38,52 @@ def kruskal_wallis(groups: list[pl.Series]) -> dict:
 def mann_whitney(a: pl.Series, b: pl.Series) -> dict:
     stat, p = stats.mannwhitneyu(_clean_series(a), _clean_series(b), alternative="two-sided")
     return {"test": "Mann-Whitney U", "statistic": stat, "p_value": p}
+
+
+def dunn_posthoc(df: pl.DataFrame, value_col: str, group_col: str, p_adjust: str = "holm") -> pl.DataFrame:
+    clean = (
+        df.select([group_col, value_col])
+        .drop_nulls()
+        .with_columns(pl.col(group_col).cast(pl.Utf8))
+    )
+    if clean.height == 0:
+        raise ValueError("No observations available for Dunn post-hoc test.")
+
+    import scikit_posthocs as sp
+
+    matrix = sp.posthoc_dunn(clean.to_pandas(), val_col=value_col, group_col=group_col, p_adjust=p_adjust)
+    matrix.index = matrix.index.astype(str)
+    matrix.columns = matrix.columns.astype(str)
+    matrix.insert(0, group_col, matrix.index)
+    return pl.from_pandas(matrix.reset_index(drop=True))
+
+
+def two_way_anova(df: pl.DataFrame, response_col: str, factor_a: str, factor_b: str) -> tuple[pl.DataFrame, pl.DataFrame]:
+    clean = df.select([response_col, factor_a, factor_b]).drop_nulls()
+    if clean.height == 0:
+        raise ValueError("No observations available for ANOVA.")
+    if factor_a == factor_b:
+        raise ValueError("factor_a and factor_b must be different.")
+
+    import statsmodels.api as sm
+    import statsmodels.formula.api as smf
+
+    pdf = clean.to_pandas()
+    formula = f"{response_col} ~ C({factor_a}) * C({factor_b})"
+    model = smf.ols(formula, data=pdf).fit()
+    anova = sm.stats.anova_lm(model, typ=2).reset_index().rename(columns={"index": "term"})
+    residual_ss = float(anova.loc[anova["term"] == "Residual", "sum_sq"].iloc[0])
+    total_ss = float(anova["sum_sq"].sum())
+    anova["eta_sq"] = anova["sum_sq"] / total_ss if total_ss > 0 else 0.0
+    anova["partial_eta_sq"] = anova["sum_sq"] / (anova["sum_sq"] + residual_ss)
+
+    means = (
+        pdf.groupby([factor_a, factor_b], dropna=False, observed=False)[response_col]
+        .agg(["mean", "median", "count"])
+        .reset_index()
+        .rename(columns={"count": "n"})
+    )
+    return pl.from_pandas(anova), pl.from_pandas(means)
 
 
 def sample_size_proportions(p0: float, mde: float, alpha: float = 0.05, power: float = 0.80) -> int:
@@ -117,7 +163,7 @@ def proportion_z_test(
         "p_value": p_value,
         "ci_low": diff - z_crit * se_ci,
         "ci_high": diff + z_crit * se_ci,
-        "significant": p_value < alpha,
+        "significant": bool(p_value < alpha),
     }
 
 
@@ -154,7 +200,7 @@ def welch_t_test(control: np.ndarray, treatment: np.ndarray, alpha: float = 0.05
         "ci_high": diff + t_crit * se,
         "df": float(df),
         "cohen_d": float(cohen_d),
-        "significant": p_value < alpha,
+        "significant": bool(p_value < alpha),
     }
 
 
