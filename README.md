@@ -9,7 +9,6 @@ This project is positioned as a **product and behavioral analytics case study**:
 - End-to-end analytical workflow: raw data ingestion, feature engineering, statistical analysis, and dashboard delivery
 - Product analytics thinking: retention, engagement, monetization, experimentation, and player segmentation
 - Reproducibility: modular code, reusable helpers, and `pytest` coverage
-- Portfolio value for a **Data Analyst / Product Analyst** role
 
 ## What's Inside
 
