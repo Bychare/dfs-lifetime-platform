@@ -6,6 +6,7 @@ import sys
 
 import dash
 import numpy as np
+import pandas as pd
 import polars as pl
 import pytest
 
@@ -34,6 +35,7 @@ def test_page_modules_import_without_server(monkeypatch):
     pytest.importorskip("lifelines")
     pytest.importorskip("statsmodels")
     pytest.importorskip("scikit_posthocs")
+    pytest.importorskip("catboost")
 
     overview = _import_page("pages.overview", monkeypatch)
     survival = _import_page("pages.survival", monkeypatch)
@@ -62,8 +64,19 @@ def test_helper_figures_render_with_minimal_inputs():
     pytest.importorskip("lifelines")
     pytest.importorskip("statsmodels")
     pytest.importorskip("scikit_posthocs")
+    pytest.importorskip("catboost")
 
     from app.components.ab_testing_helpers import posterior_figure, rate_bar_figure, sequential_figure
+    from app.components.churn_helpers import (
+        calibration_figure,
+        decile_lift_figure,
+        driver_effect_figure,
+        driver_effect_table,
+        fit_churn_models,
+        importance_figure,
+        pr_curve_figure,
+        roc_figure,
+    )
     from app.components.segmentation_helpers import (
         segment_footprint_figure,
         segment_footprint_table,
@@ -152,6 +165,35 @@ def test_helper_figures_render_with_minimal_inputs():
     )
     lowess_fig = risk_lowess_figure(display_segment_frame(segmentation_df, "is_multisport"), "is_churned", "is_multisport")
 
+    rng = np.random.default_rng(7)
+    n = 120
+    risk = rng.uniform(1, 35, n)
+    age = rng.normal(32, 7, n)
+    has_age = rng.binomial(1, 0.55, n)
+    age[has_age == 0] = np.nan
+    cohort_day = rng.integers(0, 120, n)
+    logits = -2.3 + 0.06 * risk + 0.012 * cohort_day - 0.03 * np.nan_to_num(age, nan=31) - 0.45 * has_age
+    probs = 1 / (1 + np.exp(-logits))
+    target = rng.binomial(1, probs)
+    churn_frame = pd.DataFrame(
+        {
+            "UserID": np.arange(n),
+            "Date1st": pd.Timestamp("2014-08-22") + pd.to_timedelta(cohort_day, unit="D"),
+            "target": target,
+            "RiskScore": risk,
+            "age": age,
+            "has_age": has_age.astype(float),
+            "cohort_day": cohort_day.astype(float),
+        }
+    )
+    churn_bundle = fit_churn_models(churn_frame, random_state=5, catboost_iterations=40)
+    churn_roc_fig = roc_figure(churn_bundle)
+    churn_pr_fig = pr_curve_figure(churn_bundle)
+    churn_cal_fig = calibration_figure(churn_bundle)
+    churn_decile_fig = decile_lift_figure(churn_bundle)
+    churn_driver_fig = driver_effect_figure(driver_effect_table(churn_bundle))
+    churn_importance_fig = importance_figure(churn_bundle)
+
     assert len(km_fig.data) > 0
     assert len(milestone_fig.data) > 0
     assert len(rate_fig.data) == 1
@@ -164,3 +206,9 @@ def test_helper_figures_render_with_minimal_inputs():
     assert len(dunn_fig.data) == 1
     assert len(anova_fig.data) == 1
     assert len(lowess_fig.data) >= 2
+    assert len(churn_roc_fig.data) >= 2
+    assert len(churn_pr_fig.data) >= 2
+    assert len(churn_cal_fig.data) >= 2
+    assert len(churn_decile_fig.data) >= 2
+    assert len(churn_driver_fig.data) == 2
+    assert len(churn_importance_fig.data) == 1
